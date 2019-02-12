@@ -46,8 +46,8 @@ function num2str(value: number) {
 basic.forever(function () {
 
     temp = DS18B20.Temperature(DS18B20.pin.pin0)
-    temps.pop()
-    temps.push(temp)
+    temps.removeAt(0) // remove the first element in the array 
+    temps.push(temp)  // append a new value to the array
     led.plotBarGraph(temp / 100, 40)
     serial.writeLine('' + num2str(temp))
 
