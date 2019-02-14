@@ -1,13 +1,100 @@
+/////////////////////////////////////////////////////////////////////
+// IoT Engineering Education @ KMUTNB
+// Date: 2019-02-14
+// Description:
+//     Display a 3-digit counter on TM1640-based 16x8 LED display
+// 
+/////////////////////////////////////////////////////////////////////
 let SCK = DigitalPin.P13
 let DIN = DigitalPin.P15
+///////////////////////////////////////////////////////
 
-let TM1640_CMD_DATA = 0x40  // data command
-let TM1640_CMD_ADDR = 0xC0  // address command
-let TM1640_CMD_DISP = 0x80  // display control command
-let TM1640_DSP_ON   = 0x08  // display on
-let TM1640_FIXED    = 0x04  // fixed address mode
+let TM1640_CMD_DATA = 0x40  // data command CMD1
+let TM1640_CMD_ADDR = 0xC0  // address command CMD2
+let TM1640_CMD_DISP = 0x80  // display control command CMD3
+let TM1640_DSP_ON = 0x08  // display on
+let TM1640_FIXED = 0x04  // fixed address mode
+
 let intensity = 7
-let buf: number[] = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] // 16-byte buffer
+let buf: number[] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] // 20-byte buffer
+
+function tm1640_writeCmd(value: number) {
+    tm1640_start()
+    tm1640_writeByte(value)
+    tm1640_stop()
+}
+
+function tm1640_setBrightness(level: number) {
+    if (level > 7) {
+        intensity = 7
+    } else {
+        intensity = level & 0x07
+    }
+    tm1640_writeCmd(TM1640_CMD_DISP | TM1640_DSP_ON | intensity) // set brightness and turn display on
+}
+
+function tm1640_start() {
+    // Start condition
+    pins.digitalWritePin(SCK, 1)
+    control.waitMicros(10)
+    pins.digitalWritePin(DIN, 0)
+    control.waitMicros(10)
+}
+
+function tm1640_stop() {
+    // Stop condition
+    pins.digitalWritePin(DIN, 0)
+    control.waitMicros(10)
+    pins.digitalWritePin(SCK, 0)
+    control.waitMicros(10)
+    pins.digitalWritePin(SCK, 1)
+    control.waitMicros(10)
+    pins.digitalWritePin(DIN, 1)
+    control.waitMicros(10)
+}
+
+function tm1640_writeByte(data: number, msbfirst: boolean = false) {
+    for (let i = 0; i < 8; i++) {
+        pins.digitalWritePin(SCK, 0)
+        control.waitMicros(10)
+        if (msbfirst) {
+            pins.digitalWritePin(DIN, (data >> (7 - i)) & 1)
+        } else {
+            pins.digitalWritePin(DIN, (data >> i) & 1)
+        }
+        pins.digitalWritePin(SCK, 1)
+        control.waitMicros(10)
+    }
+}
+
+function tm1640_init() {
+    pins.digitalWritePin(SCK, 1)
+    pins.digitalWritePin(DIN, 1)
+}
+
+function tm1640_clear_buf() {
+    for (let i = 0; i < buf.length; i++) {
+        buf[i] = 0
+    }
+}
+
+function tm1640_writeData(
+    addr: number,
+    data: number[],
+    num_bytes: number, msbfirst: boolean = false) {
+
+    tm1640_writeCmd(TM1640_CMD_DATA)
+    tm1640_start()
+    let value = TM1640_CMD_ADDR | (addr & 0x0f)
+    tm1640_writeByte(value)
+    for (let k = 0; k < num_bytes; k++) {
+        let _data = data[k]
+        tm1640_writeByte(_data, msbfirst)
+    }
+    tm1640_stop()
+}
+
+///////////////////////////////////////////////////////
 
 let DIGITS_FONT: number[][] = [
     [0xfe, 0x82, 0x82, 0xfe], // 0
@@ -22,98 +109,29 @@ let DIGITS_FONT: number[][] = [
     [0x9e, 0x92, 0x92, 0xfe]  // 9
 ]
 
-function tm1640_writeByte(data: number) {
-    tm1640_writeBytesToAddress( data, null, 0 )
-}
-
-function tm1640_init() {
-    pins.digitalWritePin(SCK, 1)
-    pins.digitalWritePin(DIN, 1)
-    tm1640_writeByte(TM1640_CMD_DATA); // enter command data with auto address increment
-    tm1640_writeByte(TM1640_CMD_DISP | TM1640_DSP_ON | intensity); // set brightness and turn display on
-}
-
-function tm1640_clear_buf() {
-    for (let i = 0; i < buf.length; i++) {
-        buf[i] = 0
-    }
-}
-
-function tm1640_setBrightness(level: number) {
-    if (level >= 8) {
-        intensity = 7;
-    } else {
-        intensity = level;
-    }
-    tm1640_writeByte(TM1640_CMD_DISP | TM1640_DSP_ON | intensity); // set brightness and turn display on
-}
-
-function tm1640_writeBytesToAddress(
-    addr: number,
-    data: number[],
-    num_bytes: number) {
-
-    addr = TM1640_CMD_ADDR | (addr & 0x0f);
-
-    // Start condition
-    pins.digitalWritePin(SCK, 1)
-    pins.digitalWritePin(DIN, 0)
-
-    // Write address byte
-    for (let i = 0; i < 8; i++) {
-        pins.digitalWritePin(SCK, 0)
-        control.waitMicros(4)
-        pins.digitalWritePin(DIN, (addr & 1));
-        pins.digitalWritePin(SCK, 1)
-        control.waitMicros(4)
-        addr = addr >> 1;
-    }
-	
-	if ( num_bytes > 0 ) {
-       // Write data byte(s)
-        for (let k = 0; k < num_bytes; k++) {
-            let _data = data[num_bytes - k - 1];
-            for (let i = 0; i < 8; i++) {
-                pins.digitalWritePin(SCK, 0)
-                control.waitMicros(4)
-                pins.digitalWritePin(DIN, (_data & 0x80) >> 7);
-                pins.digitalWritePin(SCK, 1);
-                control.waitMicros(4)
-                _data = _data << 1;
-            }
-        }
-	}
-    // Stop condition
-    pins.digitalWritePin(SCK, 0)
-    pins.digitalWritePin(DIN, 0)
-    pins.digitalWritePin(SCK, 1)
-    pins.digitalWritePin(DIN, 1)
-    control.waitMicros(4)
-}
-
 control.inBackground(function () {
+    tm1640_init()
+    tm1640_setBrightness(intensity) // set brightness and turn display on
+    tm1640_writeData(0, buf, 16)
+    basic.pause(1000)
     let cnt = 0
     let digits: number[] = [0, 0, 0]
 
-    tm1640_init()
-	
     while (true) {
         tm1640_clear_buf()
         for (let i = 0; i < 3; i++) { // 3 number digits
-            let data = DIGITS_FONT[digits[i]];
+            let data = DIGITS_FONT[digits[i]]
             for (let j = 0; j < 4; j++) { // 4 pixels font width
                 buf[1 + ((1 + 4) * i) + j] = data[j]
             }
         }
-        tm1640_writeBytesToAddress(0, buf, 16)
-		
+        tm1640_writeData(0, buf, 16, false)
         basic.pause(100)
-		
+
         cnt = (cnt + 1) % 1000
         digits[0] = Math.idiv(cnt, 100) % 10
-        digits[1] = Math.idiv(cnt, 10)  % 10
+        digits[1] = Math.idiv(cnt, 10) % 10
         digits[2] = cnt % 10
-
     }
 })
-///////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////
